@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>一斉送信</title>
+    <style>
+      .noscroll {
+          overflow-y: scroll;
+          -ms-overflow-style: none;    /* IE, Edge 対応 */
+          scrollbar-width: none;       /* Firefox 対応 */
+      }
+      .noscroll::-webkit-scrollbar {  /* Chrome, Safari 対応 */
+          display:none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class='noscroll'>
+      <div class='noscroll' id='header'>
+        <label>ルーム名：</label>
+        <input type='text' value='Broadcast' id='js-room-name'></input>
+        <button id='js-enter-leave'>入室</button>
+        <label>参加者数：</label>
+        <label id='js-members'></label>
+        <button id='js-screen-share'>画面共有開始</button>
+      </div>
+      <div class='noscroll' id='container' style='border:1px solid blue; padding:10px;'>
+      </div>
+    </div>
+    <script src="//cdn.webrtc.ecl.ntt.com/skyway-latest.js"></script>
+    <script src="./key.js"></script>
+    <script>
+      var div_width;
+      var div_height;
+      var myPeerId;
+      var members = [];
+      var peerIds = [];
+      (function () {
+        // 画面ロード時の処理登録
+        window.addEventListener( 'load', function() {
+          const header_height = document.getElementById('header').clientHeight;
+          container.style.height = (window.innerHeight-header_height-40) + 'px';
+          div_width = window.innerWidth-42;
+          div_height = window.innerHeight-header_height-42;
+        }, false );
+        // 画面リサイズ時の処理登録
+//        window.addEventListener( 'resize', function() {
+//          const header_height = document.getElementById('header').clientHeight;
+//          container.style.height = (window.innerHeight-header_height-40) + 'px';
+//          div_width = window.innerWidth-42;
+//          div_height = window.innerHeight-header_height-42;
+//          const div = document.getElementById('presenter');
+//          div.style.width = div_width + 'px';
+//          div.style.height = div_height + 'px';
+//          Array.from(div.children).forEach(elm => {
+//            if( elm.className == 'video' ){
+//              elm.width = div_width;
+//              elm.height = div_height;
+//            }
+//          });
+//        }, false );
+      }) ();
+
+      // メイン処理
+      (async function main() {
+        var room;
+        const roomName = document.getElementById('js-room-name');
+        const joinMembers = document.getElementById('js-members');
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        const localStream = await navigator.mediaDevices.getUserMedia(
+            { audio: true,
+              video: true,
+//              video: {
+//                 width : {ideal:640},
+//                 height: {ideal:480},
+//                 frameRate: { ideal: 10, max: 15 },
+//              },
+            }
+        ).catch(console.error);
+        var streem = localStream;
+
+        // SkyWayに接続
+        const peer = (window.peer = new Peer({key: window.__SKYWAY_KEY__,debug: 3,}));
+
+        // ローカルストリーム用divの作成
+        const newDiv = document.createElement("div");
+        // divの設定
+        newDiv.className = 'video-div';
+        newDiv.id = 'presenter';
+        newDiv.align = 'center';
+        newDiv.style.border ='1px solid gray';
+        newDiv.style.width = div_width + 'px';
+        newDiv.style.height = div_height + 'px';
+        newDiv.style.float = 'left';
+        container.appendChild(newDiv);
+        // videoの作成
+        const newVideo = document.createElement('video');
+        newVideo.className = 'video';
+        newVideo.width = div_width/2;
+        newVideo.height = div_height;
+        newVideo.muted = true;
+        newVideo.srcObject = localStream;
+        newVideo.playsInline = true;
+        newDiv.appendChild(newVideo);
+        await newVideo.play().catch(console.error);
+        // videoの作成
+        const newScreen = document.createElement('video');
+        newScreen.className = 'screen';
+        newScreen.width = div_width/2;
+        newScreen.height = div_height;
+        newScreen.srcObject = screenStream;
+        newScreen.playsInline = true;
+        newDiv.appendChild(newScreen);
+        await newScreen.play().catch(console.error);
+
+        // 入退室処理
+        const EnterLeave = document.getElementById('js-enter-leave');
+        EnterLeave.addEventListener('click', () => {
+          if (!peer.open) {
+            alert('SkyWayと接続できません。');
+            return;  // perrが未接続の時終了
+          }
+          if( EnterLeave.innerText == '入室' ){
+            // ルームに参加
+            room = peer.joinRoom(roomName.value, {
+              mode: 'sfu',
+              stream: streem,
+            });
+            EnterLeave.innerText = '退室';
+          }else{
+            EnterLeave.innerText = '入室';
+            room.close(),{once:true};
+          }
+          // 
+          room.once('open', () => {
+            members = room.members;
+            joinMembers.innerText = members.length;
+          });
+          // 自分の退室処理
+          room.once('close', () => {
+            members = [];
+            joinMembers.innerText = members.length;
+          });
+          // リスナー参加時の処理
+          room.on('peerJoin', peerId => {
+            members.push(peerId);
+            joinMembers.innerText = members.length;
+          });
+          // リスナー退室時の処理
+          room.on('peerLeave', peerId => {
+            for( let i=0; i<members.length; i++ ){
+              if( members[i] == peerId ){
+                members.splice(i,1);
+              }
+            }
+            joinMembers.innerText = members.length;
+          });
+          peer.on("open", (id) => {
+            peerIds.push(id);
+          });
+        });
+        // 画面共有処理
+        const ScreenShare = document.getElementById('js-screen-share');
+        ScreenShare.addEventListener('click', () => {
+          if( ScreenShare.innerText == '画面共有開始' ){
+            for(let i=0; i<members.length; i++ ){
+              const call = peer.call(members[i], screenStream);
+            }
+            ScreenShare.innerText = '画面共有終了';
+          } else {
+            ScreenShare.innerText = '画面共有開始';
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>
+

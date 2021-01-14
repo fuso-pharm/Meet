@@ -4,153 +4,391 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>ビデオチャット</title>
-    <link rel="stylesheet" href="./style.css">
+    <style>
+      .noscroll {
+          overflow-y: scroll;
+          -ms-overflow-style: none;    /* IE, Edge 対応 */
+          scrollbar-width: none;       /* Firefox 対応 */
+      }
+      .noscroll::-webkit-scrollbar {  /* Chrome, Safari 対応 */
+          display:none;
+      }
+      .video-div {
+          position: relative;
+          vertical-align: middle;
+      }
+      .fukidashi {
+          display: none;
+          width: 200px;
+          position: absolute;
+          top: 0;
+          padding: 2px;
+          border-radius: 0px;
+          background: blue;
+          color: #fff;
+          font-weight: bold;
+      }
+      .video {
+          position: relative;
+      }
+      .video:hover + .fukidashi {
+          display: block;
+      }
+    </style>
   </head>
   <body>
-    <div class="round_div">
-      <input type="text" placeholder="ルーム名" id="js-name">
-      <button id="js-join-trigger">参加</button>
-      <button id="js-leave-trigger">退室</button>
-
-      <section id="section2">
-        <div id="container_video" style="border: solid black 1px; border-color: #990099;"></div>
-      </section>
-
+    <div class='noscroll'>
+      <div class='noscroll' id='header'>
+        <label>参加者名：</label>
+        <input type='text' placeholder='自分の表示名を入力' id='js-my-name'></input>
+        <!-- label>画面構成：</label>
+        <label>列</label>
+        <input type='text' size=2 value='1' id='js-cols'></input>
+        <label>行</label>
+        <input type='text' size=2 value='1' id='js-rows'></input -->
+        <label>ルーム名：</label>
+        <input type='text' value='TestRoom' id='js-room-name'></input>
+        <button id='js-enter-leave'>入室</button>
+      </div>
+      <div class='noscroll' id='container' style='border:1px solid blue; padding:10px;'>
+      </div>
     </div>
     <script src="//cdn.webrtc.ecl.ntt.com/skyway-latest.js"></script>
-    <script src="../share/key.js"></script>
-
+    <script src="./key.js"></script>
     <script>
-      const Peer = window.Peer;
-
-      (async function main() {
-        const video_width = 480;
-        const video_height = parseInt(video_width / 1.333333333);
-        const video_cols = 2;
-        const video_rows = 2;
-        const section2 = document.getElementById("section2");
-        section2.style.width = (video_width * video_cols) + "px";
-        section2.style.height = (video_height * video_rows) + "px";
-        const section3 = document.getElementById("section3");
-        // ビデオ表示用コンテナの設定
-        const container = document.getElementById('container_video');
-
-
-        // テスト
-        const roomName = document.getElementById('js-name');
-        const roomId = roomName.text;
-        const joinTrigger = document.getElementById('js-join-trigger');
-        const leaveTrigger = document.getElementById('js-leave-trigger');
-        const sdkSrc = document.querySelector('script[src*=skyway]');
-
-//        meta.innerText = `UA: ${navigator.userAgent}SDK: ${sdkSrc ? sdkSrc.src : 'unknown'}`.trim();
-
-        const localStream = await navigator.mediaDevices.getUserMedia(
-            { audio: true,
-              video: {
-                 width : {ideal:320},
-                 height: {ideal:240},
-              },
-            }
-          ).catch(console.error);
-
-        // ローカルストリームの作成   Render local stream
-          const newVideo = document.createElement('video');
-          newVideo.width = video_width;
-          newVideo.height = video_height;
-//          messages.textContent += '=== video_width:'+video_width+'video_height:'+video_height+' ===\n';
-          newVideo.style.border = 'solid black 1px';
-          newVideo.style.margin = '2px';
-          newVideo.muted = true;
-          newVideo.srcObject = localStream;
-          newVideo.playsInline = true;
-          newVideo.setAttribute('data-peer-id', 'myself');
-          container.appendChild(newVideo);
-          await newVideo.play().catch(console.error);
-
-        // eslint-disable-next-line require-atomic-updates
-        const peer = (window.peer = new Peer({key: window.__SKYWAY_KEY__,debug: 3,}));
-
-        // ジョインハンドラの登録   Register join handler
-        joinTrigger.addEventListener('click', () => {
-          // Note that you need to ensure the peer has connected to signaling server
-          // before using methods of peer instance.
-          if (!peer.open) {
-            return;
+      var div_cols = 1;
+      var div_rows = 1;
+      var div_width;
+      var div_height;
+      var myPeerId;
+      var members = 0;
+      var memberName = [];
+      (function () {
+        // 画面ロード時の処理登録
+        window.addEventListener( 'load', function() {
+          const header_height = document.getElementById('header').clientHeight;
+          container.style.height = (window.innerHeight-header_height-40) + 'px';
+          div_width = Math.floor((window.innerWidth-40-(2*div_cols)) / div_cols);
+          div_height = Math.floor((window.innerHeight-header_height-40-(2*div_rows)) / div_rows);
+        }, false );
+        // 画面リサイズ時の処理登録
+        window.addEventListener( 'resize', function() {
+          const header_height = document.getElementById('header').clientHeight;
+          container.style.height = (window.innerHeight-header_height-40) + 'px';
+          div_width = Math.floor((window.innerWidth-40-(2*div_cols)) / div_cols);
+          div_height = Math.floor((window.innerHeight-header_height-40-(2*div_rows)) / div_rows);
+          for(let i = 0; i < memberName.length; i++){
+            changeDivVideoSize(div_width, div_height, memberName[i].peerId);
           }
-
-          // ルームに参加
-          const room = peer.joinRoom(roomId, {
-            mode: 'sfu',
-            stream: localStream,
-          });
-
-          room.once('open', () => {
-//            messages.textContent += '=== 参加しました ===\n';
-          });
-          room.on('peerJoin', peerId => {
-//            messages.textContent += `=== ${peerId}が参加 ===\n`;
-          });
-
-          // ルームに参加した新しいpeerのためにリモートストリームを作成  Render remote stream for new peer join in the room
-          room.on('stream', async stream => {
-            const newVideo = document.createElement('video');
-            newVideo.width = video_width;
-            newVideo.height = video_height;
-            newVideo.style.border = 'solid black 1px';
-            newVideo.style.margin = '2px';
-            newVideo.srcObject = stream;
-            newVideo.playsInline = true;
-            // mark peerId to find it later at peerLeave event
-            newVideo.setAttribute('data-peer-id', stream.peerId);
-            container.appendChild(newVideo);
-            await newVideo.play().catch(console.error);
-          });
-
-          // データの受信処理
-          room.on('data', ({ data, src }) => {
-            // Show a message sent to the room and who sent
-//            messages.textContent += `${src}: ${data}\n`;
-          });
-
-          // 他メンバーの退室処理   for closing room members
-          room.on('peerLeave', peerId => {
-            const remoteVideo = container.querySelector(`[data-peer-id="${peerId}"]`);
-            remoteVideo.srcObject.getTracks().forEach(track => track.stop());
-            remoteVideo.srcObject = null;
-            remoteVideo.remove();
-//            messages.textContent += `=== ${peerId}が退室 ===\n`;
-          });
-
-          // 自分の退室処理    for closing myself
-          room.once('close', () => {
-            sendTrigger.removeEventListener('click', onClickSend);
-//            messages.textContent += '=== 退室しました ===\n';
-            Array.from(container.children).forEach(remoteVideo => {
-              // 自分のビデオ以外をコンテナから削除
-              const id = remoteVideo.getAttribute('data-peer-id');
-//              messages.textContent += '=== ID:'+id+' ===\n';
-              if( id != 'myself'){
-                remoteVideo.srcObject.getTracks().forEach(track => track.stop());
-                remoteVideo.srcObject = null;
-                remoteVideo.remove();
-              }
-            });
-          });
-
-          sendTrigger.addEventListener('click', onClickSend);
-          leaveTrigger.addEventListener('click', () => room.close(), { once: true });
-
-          function onClickSend() {
-            // 全てのpeerにメッセージを送信    Send message to all of the peers in the room via websocket
-//            room.send(localText.value);
-//            messages.textContent += `${peer.id}: ${localText.value}\n`;
-//            localText.value = '';
+        }, false );
+      }) ();
+      // 画面構成：列数変更時の処理登録
+//      const colValue = document.getElementById('js-cols');
+//      colValue.addEventListener('input', () => {
+//        const col = Number(colValue.value);
+//        if( !isNaN(col) && col > 0 ){
+//          div_cols = col;
+//          remakeContainer();
+//        }
+//      });
+      // 画面構成：行数変更時の処理登録
+//      const rowValue = document.getElementById('js-rows');
+//      rowValue.addEventListener('input', () => {
+//        const row = Number(rowValue.value);
+//        if( !isNaN(row) && row > 0 ){
+//          div_rows = row;
+//          remakeContainer();
+//        }
+//      });
+      // videoサイズの設定＆変更
+      function makeVideoContainer(pDiv, pWidth, pHeight, pStream, pLocal) {
+        // divの設定
+        pDiv.className = 'video-div';
+        if( pLocal ){
+          pDiv.id = 'myself';
+        } else {
+          pDiv.id = pStream.peerId;
+        }
+        pDiv.align = 'center';
+        pDiv.style.border ='1px solid gray';
+        pDiv.style.width = div_width + 'px';
+        pDiv.style.height = div_height + 'px';
+        pDiv.style.float = 'left';
+        container.appendChild(pDiv);
+        // videoの作成
+        const newVideo = document.createElement('video');
+        newVideo.className = 'video';
+        SetChangeVideoSize(pWidth, pHeight, newVideo);
+        if( pLocal ){
+          newVideo.muted = true;
+        }
+        newVideo.srcObject = pStream;
+        newVideo.playsInline = true;
+        pDiv.appendChild(newVideo);
+        return newVideo;
+      }
+      // videoサイズの設定＆変更
+      function SetChangeVideoSize(pWidth, pHeight, pElement) {
+        const video_height = Math.floor(pWidth / 1.33333333);
+        if( pHeight > video_height ){
+          pElement.width = pWidth;
+          pElement.height = video_height;
+          pElement.style.top = Math.floor((pHeight - video_height) / 2) + 'px';
+        } else {
+          pElement.width = Math.floor(pHeight * 1.33333333);
+          pElement.height = pHeight;
+          pElement.style.top = '0px';
+        }
+      }
+      // divサイズとvideoサイズの変更
+      function changeDivVideoSize(pWidth, pHeight, pPeerId) {
+        const div = document.getElementById(pPeerId);
+        div.style.width = pWidth + 'px';
+        div.style.height = pHeight + 'px';
+        Array.from(div.children).forEach(elm => {
+          if( elm.className == 'video' ){
+            SetChangeVideoSize(pWidth, pHeight, elm);
           }
         });
+      }
+      // ビデオコンテナ再作成
+      function remakeContainer(room, joinMembers) {
+        const videos = [];
+        const ps = [];
+        switch(true){
+        case joinMembers == 1:
+          div_cols = 1; div_rows = 1; break;
+        case joinMembers == 2:
+          div_cols = 2; div_rows = 1; break;
+        case joinMembers > 2 && joinMembers <= 4:
+          div_cols = 2; div_rows = 2; break;
+        case joinMembers > 4 && joinMembers <= 6:
+          div_cols = 3; div_rows = 2; break;
+        case joinMembers > 6 && joinMembers <= 9:
+          div_cols = 3; div_rows = 3; break;
+        case joinMembers > 9 && joinMembers <= 12:
+          div_cols = 4; div_rows = 3; break;
+        case joinMembers > 12 && joinMembers <= 16:
+          div_cols = 4; div_rows = 4; break;
+        default:
+          div_cols = 5; div_rows = 4;
+        }
+//        colValue.value = div_cols;
+//        rowValue.value = div_rows;
+        header_height = document.getElementById('header').clientHeight;
+        container.style.height = (window.innerHeight-header_height-40) + 'px';
+        div_width = Math.floor((window.innerWidth-40-(2*div_cols)) / div_cols);
+        div_height = Math.floor((window.innerHeight-header_height-40-(2*div_rows)) / div_rows);
+        changeDivVideoSize(div_width, div_height, myPeerId);
+        Array.from(container.children).forEach(targetDiv => {
+          // 自分以外をコンテナから削除
+          if( targetDiv.id != myPeerId){
+            Array.from(targetDiv.children).forEach(elm => {
+              // 接続中のビデオを退避
+              if( elm.className == 'video' ){
+                videos.push(elm);
+              } else {
+                ps.push(elm);
+              }
+              elm.remove();
+            });
+            targetDiv.remove();
+          }
+        });
+        // 退避したdivを再作成
+        for( let i=0; i<videos.length ; i++ ){
+            const newDiv = document.createElement("div");
+            newDiv.className = 'video-div';
+            newDiv.id = memberName[i].peerId;
+            newDiv.align = 'center';
+            newDiv.style.border ='1px solid gray';
+            newDiv.style.width = div_width + 'px';
+            newDiv.style.height = div_height + 'px';
+            newDiv.style.float = 'left';
+            SetChangeVideoSize(div_width, div_height, videos[i]);
+            newDiv.appendChild(videos[i]);
+            newDiv.appendChild(ps[i]);
+            container.appendChild(newDiv);
+        }
+      }
 
-        peer.on('error', console.error);
+      // メイン処理
+      (async function main() {
+        var room;
+        const myName = document.getElementById('js-my-name');
+        const roomName = document.getElementById('js-room-name');
+        const localStream = await navigator.mediaDevices.getUserMedia(
+            { audio: true,
+              video: true,
+//              video: {
+//                 width : {ideal:640},
+//                 height: {ideal:480},
+//                 frameRate: { ideal: 10, max: 15 },
+//              },
+            }
+        ).catch(console.error);
+
+        // SkyWayに接続
+        const peer = (window.peer = new Peer({key: window.__SKYWAY_KEY__,debug: 3,}));
+        // ローカルストリーム用divの作成
+        const newDiv = document.createElement("div");
+        newVideo = makeVideoContainer(newDiv, div_width, div_height, localStream, true);
+        const newP = document.createElement('p');
+        newP.className = 'fukidashi';
+        newP.innerText = 'ルームに未参加です';
+        newDiv.appendChild(newP);
+        memberName.push({peerId:'myself', name:''});
+        members ++;
+        myPeerId = 'myself';
+        await newVideo.play().catch(console.error);
+
+        // 入退室処理
+        const EnterLeave = document.getElementById('js-enter-leave');
+        EnterLeave.addEventListener('click', () => {
+          if (!peer.open) {
+            alert('SkyWayと接続できません。');
+            return;  // perrが未接続の時終了
+          }
+          if( document.getElementById('js-my-name').value == '' ){
+            alert('参加者名を入力してください。');
+            return;
+          }
+          if( EnterLeave.innerText == '入室' ){
+            // ルームに参加
+            room = peer.joinRoom(roomName.value, {
+              mode: 'sfu',
+              stream: localStream,
+            });
+            EnterLeave.innerText = '退室';
+          }else{
+            EnterLeave.innerText = '入室';
+            room.close(),{once:true};
+          }
+          // 
+          room.once('open', () => {
+            myPeerId = peer.id;
+            const myDiv = document.getElementById('myself');
+            myDiv.id = myPeerId;
+            Array.from(myDiv.children).forEach(elm => {
+               if( elm.className == 'fukidashi' ){
+                 elm.innerText = document.getElementById('js-my-name').value;
+               }
+            });
+            for( let i=0; i<members; i++ ){
+              if( memberName[i].peerId == 'myself' ){
+                memberName[i].peerId = myPeerId;
+                memberName[i].name = myName.value;
+                break;
+              }
+            }
+            room.send(JSON.stringify({myName:myName.value}));
+          });
+          // ルームに参加した新しいpeerのためにリモートストリームを作成
+          room.on('stream', async stream => {
+            members ++;
+            remakeContainer(room, members);
+            const newDiv = document.createElement("div");
+            newVideo = makeVideoContainer(newDiv, div_width, div_height, stream, false);
+            const newP = document.createElement('p');
+            newP.className = 'fukidashi';
+            newP.innerText = '未定';
+            for( let i=0; i<memberName.length; i++ ){
+              if( memberName[i].peerId == stream.peerId ){
+                newP.innerText = memberName[i].name;
+              }
+            }
+            if( newP.innerText == '未定' ){
+              room.send(JSON.stringify({WhatYorName:''}));
+            }
+            newDiv.appendChild(newP);
+            await newVideo.play().catch(console.error);
+          });
+          // 自分の退室処理
+          room.once('close', () => {
+            Array.from(container.children).forEach(targetDiv => {
+              if( targetDiv.id == myPeerId){
+                // 自分のコンテナを初期化
+                targetDiv.id = 'myself';
+                myPeerId = 'myself';
+                Array.from(targetDiv.children).forEach(elm => {
+                  if( elm.className == 'fukidashi' ){
+                    elm.innerText = 'ルームに未参加です';
+                  }
+                });
+              } else {
+                // 自分以外のコンテナのエレメントを削除
+                Array.from(targetDiv.children).forEach(elm => {
+                  if( elm.className == 'video' ){
+                    elm.srcObject.getTracks().forEach(track => track.stop());
+                    elm.srcObject = null;
+                  }
+                  elm.remove();
+                });
+                targetDiv.remove();
+              }
+            });
+            // 自分のPeerId以外をすべて削除
+            memberName.splice(1);
+            memberName[0].peerId = 'myself';
+            members = 1;
+            remakeContainer(room, members);
+          });
+          // 他メンバーの退室処理
+          room.on('peerLeave', peerId => {
+            // 退室したメンバーのコンテナを削除
+            const targetDiv = document.getElementById(peerId);
+            try{
+              Array.from(targetDiv.children).forEach(elm => {
+                if( elm.className == 'video' ){
+                  elm.srcObject.getTracks().forEach(track => track.stop());
+                  elm.srcObject = null;
+                }
+                elm.remove();
+              });
+            } finally {
+              targetDiv.remove();
+            }
+            // 退室したPeerIdをmemberNameから削除
+            for( let i=1; i<memberName.length ; i++ ){
+              if( memberName[i] == peerId ){
+                memberName.splice(i, 1);
+              }
+            }
+            members --;
+            remakeContainer(room, members);
+          });
+          // データの受信処理
+          room.on('data', ({ data, src }) => {
+            const peerId = `${src}`;
+            const recdata = JSON.parse(`${data}`);
+            if( typeof recdata.myName != "undefined"){
+              memberName.push({peerId:peerId, name:recdata.myName});
+            }
+            if( typeof recdata.WhatYorName != "undefined"){
+              room.send(JSON.stringify({AnswerMyName:document.getElementById('js-my-name').value}));
+            }
+            if( typeof recdata.AnswerMyName != "undefined"){
+              let not_exist = true;
+              for( let i=0; i<memberName.length; i++ ){
+                if( memberName[i].peerId == peerId ){
+                  not_exist = false;
+                  break;
+                }
+              }
+              if( not_exist ){
+                memberName.push({peerId:peerId, name:recdata.AnswerMyName});
+                const targetDiv = document.getElementById(peerId);
+                Array.from(targetDiv.children).forEach(elm => {
+                  if( elm.className == 'fukidashi' ){
+                    elm.innerText = recdata.AnswerMyName;
+                  }
+                });
+              }
+            }
+          });
+        });
       })();
     </script>
   </body>
 </html>
+

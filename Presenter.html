@@ -13,6 +13,10 @@
       .noscroll::-webkit-scrollbar {  /* Chrome, Safari 対応 */
           display:none;
       }
+      .video-div {
+          position: relative;
+          vertical-align: middle;
+      }
     </style>
   </head>
   <body>
@@ -24,12 +28,13 @@
         <label>参加者数：</label>
         <label id='js-members'></label>
         <button id='js-screen-share'>画面共有開始</button>
+        <label id='js-message'></label>
       </div>
       <div class='noscroll' id='container' style='border:1px solid blue; padding:10px;'>
       </div>
     </div>
     <script src="//cdn.webrtc.ecl.ntt.com/skyway-latest.js"></script>
-    <script src="./key.js"></script>
+    <script src="../conf/key.js"></script>
     <script>
       var div_width;
       var div_height;
@@ -45,29 +50,41 @@
           div_height = window.innerHeight-header_height-42;
         }, false );
         // 画面リサイズ時の処理登録
-//        window.addEventListener( 'resize', function() {
-//          const header_height = document.getElementById('header').clientHeight;
-//          container.style.height = (window.innerHeight-header_height-40) + 'px';
-//          div_width = window.innerWidth-42;
-//          div_height = window.innerHeight-header_height-42;
-//          const div = document.getElementById('presenter');
-//          div.style.width = div_width + 'px';
-//          div.style.height = div_height + 'px';
-//          Array.from(div.children).forEach(elm => {
-//            if( elm.className == 'video' ){
-//              elm.width = div_width;
-//              elm.height = div_height;
-//            }
-//          });
-//        }, false );
+        window.addEventListener( 'resize', function() {
+          const header_height = document.getElementById('header').clientHeight;
+          container.style.height = (window.innerHeight-header_height-40) + 'px';
+          div_width = window.innerWidth-42;
+          div_height = window.innerHeight-header_height-42;
+          const div = document.getElementById('presenter');
+          div.style.width = div_width + 'px';
+          div.style.height = div_height + 'px';
+          if( div.childElementCount == 2 ){
+            Array.from(div.children).forEach(elm => {
+              if( elm.id == 'screen' ){
+                elm.width = div_width * 0.9;
+                elm.height = div_height * 0.9;
+              } else {
+                elm.width = div_width * 0.1;
+                elm.height = div_height * 0.1;
+              }
+            });
+          } else {
+            Array.from(div.children).forEach(elm => {
+               elm.width = div_width;
+               elm.height = div_height;
+            });
+          }
+        }, false );
       }) ();
 
       // メイン処理
       (async function main() {
-        var room;
+        var roomVideo;
+        var roomScreen;
+        var roomScreenCount = 0;
         const roomName = document.getElementById('js-room-name');
         const joinMembers = document.getElementById('js-members');
-        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        const lblMessage = document.getElementById('js-message');
         const localStream = await navigator.mediaDevices.getUserMedia(
             { audio: true,
               video: true,
@@ -81,7 +98,8 @@
         var streem = localStream;
 
         // SkyWayに接続
-        const peer = (window.peer = new Peer({key: window.__SKYWAY_KEY__,debug: 3,}));
+        const peerVideo = (window.peer = new Peer({key: window.__SKYWAY_KEY__,debug: 3,}));
+        const peerScreen = (window.peer = new Peer({key: window.__SKYWAY_KEY__,debug: 3,}));
 
         // ローカルストリーム用divの作成
         const newDiv = document.createElement("div");
@@ -96,81 +114,126 @@
         container.appendChild(newDiv);
         // videoの作成
         const newVideo = document.createElement('video');
-        newVideo.className = 'video';
-        newVideo.width = div_width/2;
+        newVideo.id = 'video'
+        newVideo.className = 'video-div';
+//        newVideo.style.border ='1px solid gray';
+        newVideo.float = 'left';
+        newVideo.width = div_width;
         newVideo.height = div_height;
         newVideo.muted = true;
         newVideo.srcObject = localStream;
         newVideo.playsInline = true;
         newDiv.appendChild(newVideo);
         await newVideo.play().catch(console.error);
-        // videoの作成
-        const newScreen = document.createElement('video');
-        newScreen.className = 'screen';
-        newScreen.width = div_width/2;
-        newScreen.height = div_height;
-        newScreen.srcObject = screenStream;
-        newScreen.playsInline = true;
-        newDiv.appendChild(newScreen);
-        await newScreen.play().catch(console.error);
 
         // 入退室処理
         const EnterLeave = document.getElementById('js-enter-leave');
         EnterLeave.addEventListener('click', () => {
-          if (!peer.open) {
+          if (!peerVideo.open) {
             alert('SkyWayと接続できません。');
             return;  // perrが未接続の時終了
           }
           if( EnterLeave.innerText == '入室' ){
             // ルームに参加
-            room = peer.joinRoom(roomName.value, {
+            roomVideo = peerVideo.joinRoom(roomName.value, {
               mode: 'sfu',
               stream: streem,
             });
             EnterLeave.innerText = '退室';
           }else{
             EnterLeave.innerText = '入室';
-            room.close(),{once:true};
+            roomVideo.close(),{once:true};
           }
           // 
-          room.once('open', () => {
-            members = room.members;
-            joinMembers.innerText = members.length;
+          roomVideo.once('open', () => {
+            members = roomVideo.members;
+            for( let i=0; i<members.length; i++ ){
+              if( members[i] == peerVideo.id ){
+                members.splice(i,1);
+              }
+            }
+            joinMembers.innerText = members.length - roomScreenCount;
+            lblMessage.innerText = '接続中．．．．．';
           });
           // 自分の退室処理
-          room.once('close', () => {
+          roomVideo.once('close', () => {
             members = [];
             joinMembers.innerText = members.length;
+            lblMessage.innerText = '';
           });
           // リスナー参加時の処理
-          room.on('peerJoin', peerId => {
-            members.push(peerId);
-            joinMembers.innerText = members.length;
+          roomVideo.on('peerJoin', peerId => {
+            if( peerId != peerScreen.id ){
+//              members.push(peerId);
+              joinMembers.innerText = members.length - roomScreenCount;
+            }
           });
           // リスナー退室時の処理
-          room.on('peerLeave', peerId => {
+          roomVideo.on('peerLeave', peerId => {
             for( let i=0; i<members.length; i++ ){
               if( members[i] == peerId ){
                 members.splice(i,1);
               }
             }
-            joinMembers.innerText = members.length;
-          });
-          peer.on("open", (id) => {
-            peerIds.push(id);
+            joinMembers.innerText = members.length - roomScreenCount;
           });
         });
         // 画面共有処理
         const ScreenShare = document.getElementById('js-screen-share');
-        ScreenShare.addEventListener('click', () => {
+        ScreenShare.addEventListener('click', async () => {
+          if (!peerScreen.open) {
+            alert('画面共有がSkyWayと未接続です。');
+            return;  // perrが未接続の時終了
+          }
+          // videoの作成
           if( ScreenShare.innerText == '画面共有開始' ){
-            for(let i=0; i<members.length; i++ ){
-              const call = peer.call(members[i], screenStream);
-            }
+            const video = document.getElementById('video');
+            video.width = div_width * 0.1;
+            video.height = div_height * 0.1;
+            const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+            const newScreen = document.createElement('video');
+            newScreen.id = 'screen';
+            newScreen.className = 'video-div';
+//            newScreen.style.border ='1px solid gray';
+            newScreen.float = 'left';
+            newScreen.width = div_width * 0.9;
+            newScreen.height = div_height * 0.9;
+            newScreen.srcObject = screenStream;
+            newScreen.playsInline = true;
+            newDiv.appendChild(newScreen);
+            newScreen.play().catch(console.error);
+            // 共有画面の配信
+            // ルームに参加
+            roomScreen = peerScreen.joinRoom(roomName.value, {
+              mode: 'sfu',
+              stream: screenStream,
+            });
             ScreenShare.innerText = '画面共有終了';
           } else {
+            const screen = document.getElementById('screen');
+            screen.srcObject.getTracks().forEach(track => track.stop());
+            screen.srcObject = null;
+            screen.remove();
+            const div = document.getElementById('presenter');
+            Array.from(div.children).forEach(elm => {
+              if( elm.className == 'screen' ){
+                elm.remove();
+              }
+            });
+            const video = document.getElementById('video');
+            video.width = div_width;
+            video.height = div_height;
+            roomScreen.close(),{once:true};
             ScreenShare.innerText = '画面共有開始';
           }
+          // 共有画面の参加時
+          roomScreen.once('open', () => {
+            roomScreenCount++;
+          });
+          // 共有画面の退室時
+          roomScreen.once('close', () => {
+            roomScreenCount--;
+          });
         });
       })();
     </script>

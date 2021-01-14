@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>一斉送信</title>
+    <style>
+      .noscroll {
+          overflow-y: scroll;
+          -ms-overflow-style: none;    /* IE, Edge 対応 */
+          scrollbar-width: none;       /* Firefox 対応 */
+      }
+      .noscroll::-webkit-scrollbar {  /* Chrome, Safari 対応 */
+          display:none;
+      }
+      .video-div {
+          position: relative;
+          vertical-align: middle;
+      }
+    </style>
+  </head>
+  <body>
+    <div class='noscroll'>
+      <div class='noscroll' id='header'>
+        <label>ルーム名：</label>
+        <input type='text' value='Broadcast' id='js-room-name'></input>
+        <button id='js-enter-leave'>入室</button>
+        <label id='js-message'></label>
+      </div>
+      <div class='noscroll' id='container' style='border:1px solid blue; padding:10px;'>
+      </div>
+    </div>
+    <script src="//cdn.webrtc.ecl.ntt.com/skyway-latest.js"></script>
+    <script src="./key.js"></script>
+    <script>
+      var div_width;
+      var div_height;
+      var screenElementId;
+      (function () {
+        // 画面ロード時の処理登録
+        window.addEventListener( 'load', function() {
+          const header_height = document.getElementById('header').clientHeight;
+          container.style.height = (window.innerHeight-header_height-40) + 'px';
+          div_width = window.innerWidth-42;
+          div_height = window.innerHeight-header_height-42;
+          // divの設定
+          const newDiv = document.createElement("div");
+          newDiv.className = 'video-div';
+          newDiv.id = 'listener';
+          newDiv.align = 'center';
+          newDiv.style.border ='1px solid gray';
+          newDiv.style.width = div_width + 'px';
+          newDiv.style.height = div_height + 'px';
+          newDiv.style.float = 'left';
+          container.appendChild(newDiv);
+        }, false );
+        // 画面リサイズ時の処理登録
+        window.addEventListener( 'resize', function() {
+          const header_height = document.getElementById('header').clientHeight;
+          container.style.height = (window.innerHeight-header_height-40) + 'px';
+          div_width = window.innerWidth-42;
+          div_height = window.innerHeight-header_height-42;
+          const div = document.getElementById('listener');
+          div.style.width = div_width + 'px';
+          div.style.height = div_height + 'px';
+          if( div.childElementCount == 2 ){
+            Array.from(div.children).forEach(elm => {
+              if( elm.id == screenElementId ){
+                elm.width = div_width * 0.9;
+                elm.height = div_height * 0.9;
+              } else {
+                elm.width = div_width * 0.1;
+                elm.height = div_height * 0.1;
+              }
+            });
+          } else {
+            Array.from(div.children).forEach(elm => {
+               elm.width = div_width;
+               elm.height = div_height;
+            });
+          }
+        }, false );
+      }) ();
+
+      // メイン処理
+      (async function main() {
+        var room;
+        const roomName = document.getElementById('js-room-name');
+        const lblMessage = document.getElementById('js-message');
+
+        // SkyWayに接続
+        const peer = (window.peer = new Peer({key: window.__SKYWAY_KEY__,debug: 3,}));
+
+        // 入退室処理
+        const EnterLeave = document.getElementById('js-enter-leave');
+        EnterLeave.addEventListener('click', () => {
+          if (!peer.open) {
+            alert('SkyWayと接続できません。');
+            return;  // perrが未接続の時終了
+          }
+          if( EnterLeave.innerText == '入室' ){
+            lblMessage.innerText = '演者が参加するまでお待ちください';
+            // ルームに参加
+            room = peer.joinRoom(roomName.value, {
+              mode: 'sfu',
+            });
+            EnterLeave.innerText = '退室';
+          }else{
+            EnterLeave.innerText = '入室';
+            room.close(),{once:true};
+          }
+          // 
+          room.once('open', () => {
+            // Nothing
+          });
+          // ルームに参加した新しいpeerのためにリモートストリームを作成
+          room.on('stream', async stream => {
+            lblMessage.innerText = '接続中．．．．．';
+            const div = document.getElementById('listener');
+            if( div.childElementCount < 2 ){
+              // videoの作成
+              const newVideo = document.createElement('video');
+              newVideo.id = stream.peerId;
+              newVideo.style.border ='1px solid gray';
+              newVideo.width = div_width;
+              newVideo.height = div_height;
+              newVideo.srcObject = stream;
+              newVideo.playsInline = true;
+              const newDiv = document.getElementById('listener');
+              newDiv.appendChild(newVideo);
+              if( div.childElementCount == 2 ){
+                screenElementId = stream.peerId;
+                Array.from(div.children).forEach(elm => {
+                  if( elm.id == stream.peerId ){
+                    elm.width = div_width * 0.9;
+                    elm.height = div_height * 0.9;
+                  } else {
+                    elm.width = div_width * 0.1;
+                    elm.height = div_height * 0.1;
+                  }
+                });
+              } else {
+                Array.from(div.children).forEach(elm => {
+                   elm.width = div_width;
+                   elm.height = div_height;
+                });
+              }
+              await newVideo.play().catch(console.error);
+            }
+          });
+          // 自分の退室処理
+          room.once('close', () => {
+            lblMessage.innerText = '';
+            const div = document.getElementById('listener');
+            Array.from(div.children).forEach(elm => {
+              elm.srcObject.getTracks().forEach(track => track.stop());
+              elm.srcObject = null;
+              elm.remove();
+            });
+          });
+          // 他メンバーの退室処理
+          room.on('peerLeave', peerId => {
+            // 退室したメンバーのコンテナを削除
+            const elm = document.getElementById(peerId);
+            if( elm != null ){
+              elm.srcObject.getTracks().forEach(track => track.stop());
+              elm.srcObject = null;
+              elm.remove();
+            }
+            switch( document.getElementById('listener').childElementCount ){
+            case 0:
+              lblMessage.innerText = '';
+              break;
+            case 1:
+              const div = document.getElementById('listener');
+              Array.from(div.children).forEach(elm => {
+                 elm.width = div_width;
+                 elm.height = div_height;
+              });
+            }
+          });
+        });
+      })();
+    </script>
+  </body>
+</html>
+

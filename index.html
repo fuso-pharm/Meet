@@ -761,13 +761,18 @@
             const context = pointer.getContext('2d');
             const peerId = `${src}`;
             const recdata = JSON.parse(`${data}`);
-            let img;
+            let img, index;
             switch(recdata.cmd){
             case 'MyName':
               // 参加者情報受信
-              memberName.push({peerId:peerId, name:recdata.data, video:false, audioTimer:undefined});
               console.log('>>>Agent-MyName:'+recdata.agent);
-              members++;
+              index = memberName.findIndex(obj => obj.peerId === peerId);
+              if( index >= 0 ){
+                memberName[index].name = recdata.data;
+              }else{
+                memberName.push({peerId:peerId, name:recdata.data, video:false, audioTimer:undefined});
+                members++;
+              }
               break;
             case 'WhatYourName':
               // 参加者情報要求データ受信
@@ -779,7 +784,7 @@
               break;
             case 'AnswerMyName':
               // 参加者情報応答データ受信
-              const index = memberName.findIndex(obj => obj.peerId === peerId);
+              index = memberName.findIndex(obj => obj.peerId === peerId);
               if( index >= 0 ){
                 memberName[index].name = recdata.AnswerMyName;
               }else{

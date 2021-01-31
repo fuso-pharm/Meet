@@ -8,15 +8,25 @@
       .noscroll {
           overflow: hidden;
       }
+      .canvas-wrapper {
+          position: relative;
+          clear: both;
+      }
+      .canvas-wrapper canvas{
+          position: absolute;
+          top: 0;
+          left: 0;
+          border: 1px solid black;
+      }
       .video-div {
           position: relative;
           vertical-align: middle;
       }
       .fukidashi {
           display: none;
-          width: 200px;
+//          width: 200px;
           position: absolute;
-          top: 0;
+          top: 0px;
           padding: 2px;
           border-radius: 0px;
           background: blue;
@@ -29,100 +39,346 @@
       .video:hover + .fukidashi {
           display: block;
       }
+      .v_middle{
+          vertical-align: middle;
+      }
+      input[type="file"] {
+          display: none;
+      }
+      .button {
+          appearance: button;
+          -webkit-writing-mode: horizontal-tb !important;
+          text-rendering: auto;
+          color: black;
+          letter-spacing: normal;
+          word-spacing: normal;
+          text-transform: none;
+          text-indent: 0px;
+          text-shadow: none;
+          display: inline-block;
+          text-align: center;
+          align-items: flex-start;
+          cursor: default;
+          background-color: rgb(239, 239, 239);
+          box-sizing: border-box;
+          margin: 0em;
+          font: 400 13.3333px Arial;
+          padding: 1px 6px;
+          border-width: 1px;
+          border-style: outset;
+          border-color: rgb(118, 118, 118);
+          border-image: initial;
+      }
     </style>
   </head>
   <body class='noscroll'>
     <div>
-      <div id='header'>
-        <label>参加者名：</label>
-        <input type='text' placeholder='自分の表示名を入力' id='js-my-name'></input>
-        <label>ルーム名：</label>
-        <input type='text' value='TestRoom' id='js-room-name'></input>
-        <button id='js-enter-leave'>入室</button>
-        <button id='js-screen-share' disabled>画面共有開始</button>
-        <label id='js-message'></label>
+      <div id='div_header'>
+        <label id='lbl_camera' class='v_middle'>カメラ：</label>
+        <select id='sel_camera' class='v_middle'>
+          <option value="front" selected>前</option>
+          <option value="ria">後</option>
+        </select>
+        <label id='lbl_name' class='v_middle'>参加者名：</label>
+        <input id='input_my_name' class='v_middle' type='text' placeholder='表示名を入力' size=10></input>
+        <label id='lbl_room' class='v_middle'>ルーム名：</label>
+        <input id='input_room_name' class='v_middle' type='text' value='TestRoom' size=10></input>
+        <label id='lbl_share' class='v_middle'hidden>共有：</label>
+        <button id='button_screen_share' class='v_middle' hidden>アプリケーション画面</button>
+        <label id='lbl_file_selector' hidden>
+          <input id='input_file_selector' class='v_middle' type='file' accept="image/*" multiple></input>画像データ
+          <!-- input id='input_file_selector' class='v_middle' type='file' webkitdirectory></input -->
+        </label>
+        <button id='button_file_exit' hidden>共有終了</button>
+        <input id='input_previous_page' class='v_middle' type='image' src='./triangle-left.png' hidden></input>
+        <label id='lbl_pages' class='v_middle'hidden></label>
+        <input id='input_next_page' class='v_middle' type='image' src='./triangle-right.png' hidden></input>
+        <label id='lbl_pointer_setting' class='v_middle' hidden>ポインタ：</label>
+        <select id='sel_color' class='v_middle' hidden>
+          <option value="red" selected>赤</option>
+          <option value="blue">青</option>
+          <option value="green">緑</option>
+        </select>
+        <select id='sel_size' class='v_middle' hidden>
+          <option value="4">小</option>
+          <option value="6" selected>中</option>
+          <option value="8">大</option>
+        </select>
+        <button id='button_enter_leave' class='v_middle' style='float:right;'>入室</button>
+        <label id='lbl_message' class='v_middle' style='float:right;'></label>
       </div>
       <div>
-        <div id='common' style='width:0px; height:0px; float:left;'></div>
-        <div id='container' style='border:1px solid blue; float:left;'></div>
+        <div id='share_container' class='canvas-wrapper' style='width:0px; height:0px; float:left;'>
+          <canvas id='canvas_img' width='0px' height='0px'></canvas>
+          <canvas id='pointer' width='0px' height='0px'></canvas>
+        </div>
+        <div id='video_container' style='border:1px solid blue; float:left;'></div>
       </div>
     </div>
     <script src="//cdn.webrtc.ecl.ntt.com/skyway-latest.js"></script>
     <script src="./key.js"></script>
     <script>
-      var common_width;
-      var common_height;
-      var container_width;
-      var container_height;
-      var div_cols = 1;
-      var div_rows = 1;
-      var div_width;
-      var div_height;
-      var myPeerId, myScreenPeerId;
-      var members = 0;
-      var memberName = [];
-      var haveDisplayMedia = false;
+      let myVideo = undefined;
+      let peerMain, roomMain;
+      let peerScreen, roomScreen;
+      let share_container_width, share_container_height;
+      let disp_width, disp_height;
+      let video_container_width, video_container_height;
+      let video_cols = video_rows = 1;
+      let div_width, div_height;
+      let myPeerId, myScreenPeerId;
+      let members = 0;               // ビデオ作成済みメンバー数
+      let memberName = [];           // ビデオメンバー管理用 {peerId:Id番号, name:参加者名, video:作成済み=true,未作成=false}
+      let haveImageMedia = false;    // 画像共有フラグ
+      let saveImageMedia = false;    // 画像表示済みフラグ
+      let haveDisplayMedia = false;  // アプリケーション共有フラグ
+
+      let canvasTimer = null;
+      let pointerTimer = null;
+      let fileReader = new FileReader();
+      let files = null;
+      let target_page = null;
+      let shareAspectRate = 1.33333333;
+      let videoAspectRate = 1.33333333;
+//      let shareAspectRate = 1.77777777;
+//      let videoAspectRate = 1.77777777;
+      let audioAnalyzer = null;
+      let audioSource = null;
+      let audioContext = null;
+      let audioRequest = null;
+      const Agent = navigator.userAgent;
+
+      //////////////////////////////////////////////////////////////////////////////////////////////////////
+      // windowイベント
+      //////////////////////////////////////////////////////////////////////////////////////////////////////
       (function () {
-        // 画面ロード時の処理登録
+        //******************************************************************************************
+        // 画面ロードイベント
+        //******************************************************************************************
         window.addEventListener( 'load', function() {
-          const header_height = document.getElementById('header').clientHeight;
-          common_with = 0;
-          common_height = window.innerHeight-header_height-20;
-          common.style.width = common_width + 'px';
-          common.style.height = common_height + 'px';
-          container_width = window.innerWidth-20;
-          container_height = common_height;
-          container.style.width = container_width + 'px';
-          container.style.height = container_height + 'px';
-          div_width = Math.floor((container_width-(2*div_cols)) / div_cols);
-          div_height = Math.floor((container_height-(2*div_rows)) / div_rows);
+          let video_cnt = 0;
+
+          try{
+            navigator.mediaDevices.enumerateDevices()
+            .then(function(devices) {
+              devices.forEach(function(device) {
+                if( device.kind == 'videoinput' ){
+                  video_cnt++;
+               }
+                if( video_cnt > 1 ){
+                  lbl_camera.hidden = sel_camera.hidden = false;
+                }else{
+                  lbl_camera.hidden = sel_camera.hidden = true;
+                }
+                console.log(device.kind + ": " + device.label + " id = " + device.deviceId);
+              });
+            }).catch(function(err) {
+              alert(err);
+              console.log(err.name + ": " + err.message);
+            });
+          }catch (e){
+            alert(e);
+            lbl_camera.hidden = sel_camera.hidden = true;
+          }
+          video_container_setting( false, 1 );
+          share_container_setting( false )
         }, false );
-        // 画面リサイズ時の処理登録
+
+        //******************************************************************************************
+        // 画面リサイズイベント
+        //******************************************************************************************
         window.addEventListener( 'resize', function() {
-          const header_height = document.getElementById('header').clientHeight;
-          if( haveDisplayMedia ){
-            // 共有画面　表示時の処理
-            common_width = Math.floor((window.innerWidth-20)*0.8);
-            common_height = window.innerHeight-header_height-20;
-            common.style.width = common_width + 'px';
-            common.style.height = common_height + 'px';
-            Array.from(common.children).forEach(targetDiv => {
-              Array.from(targetDiv.children).forEach(elm => {
-                if( elm.className == 'video' ){
-                  changeDivVideoSize(common_width, common_height, targetDiv.id);
-                }
-              });
-            });
-            container_width = window.innerWidth-common_width-20;
-            container_height = common_height;
-            container.style.width = container_width + 'px';
-            container.style.height = container_height + 'px';
-            div_width = Math.floor((container_width-(2*div_cols)) / div_cols);
-            div_height = Math.floor((container_height-(2*div_rows)) / div_rows);
-            Array.from(container.children).forEach(targetDiv => {
-              Array.from(targetDiv.children).forEach(elm => {
-                if( elm.className == 'video' ){
-                  changeDivVideoSize(div_width, div_height, targetDiv.id);
-                }
-              });
-            });
-          } else {
-            // 共有画面　非表示時の処理
-            common_with = 0;
-            common_height = window.innerHeight-header_height-20;
-            container_width = window.innerWidth-20;
-            container_height = common_height;
-            container.style.width = container_width + 'px';
-            container.style.height = container_height + 'px';
-            div_width = Math.floor((container_width-(2*div_cols)) / div_cols);
-            div_height = Math.floor((container_height-(2*div_rows)) / div_rows);
-            for(let i = 0; i < memberName.length; i++){
-              changeDivVideoSize(div_width, div_height, memberName[i].peerId);
+          video_container_setting( haveImageMedia || haveDisplayMedia, members );
+          share_container_setting( haveImageMedia || haveDisplayMedia );
+          if( haveImageMedia ){
+            // 画像データの再取得
+            if( canvasTimer != null ){
+              clearInterval(canvasTimer);
             }
+            canvasTimer = setInterval(function(){
+              if( canvas_img.name == myPeerId ){
+                fileReader.readAsDataURL(files[target_page]);
+              }else{
+                roomMain.send(JSON.stringify({cmd:'RequestImage'}));
+              }
+              clearInterval(canvasTimer);
+              canvasTimer = null;
+            }, 100);
           }
         }, false );
       }) ();
-      // videoサイズの設定＆変更
+
+      //////////////////////////////////////////////////////////////////////////////////////////////////////
+      // サブルーチン
+      //////////////////////////////////////////////////////////////////////////////////////////////////////
+      //******************************************************************************************
+      // video_containerの設定
+      //******************************************************************************************
+      function video_container_setting(pCommonDisplay, pjoinMembers){
+        if( pCommonDisplay ){
+          switch(true){
+          case pjoinMembers <= 5:
+            video_cols = 1; video_rows = 5; break;
+          case pjoinMembers > 5 && pjoinMembers <= 10:
+            video_cols = 1; video_rows = 10; break;
+          default:
+            video_cols = 2; video_rows = 10;
+          }
+          video_container_width = Math.floor((window.innerWidth - 20) * 0.15) * video_cols;
+        }else{
+          switch(true){
+          case pjoinMembers == 1:
+            video_cols = 1; video_rows = 1; break;
+          case pjoinMembers == 2:
+            video_cols = 2; video_rows = 1; break;
+          case pjoinMembers > 2 && pjoinMembers <= 4:
+            video_cols = 2; video_rows = 2; break;
+          case pjoinMembers > 4 && pjoinMembers <= 6:
+            video_cols = 3; video_rows = 2; break;
+          case pjoinMembers > 6 && pjoinMembers <= 9:
+            video_cols = 3; video_rows = 3; break;
+          case pjoinMembers > 9 && pjoinMembers <= 12:
+            video_cols = 4; video_rows = 3; break;
+          case pjoinMembers > 12 && pjoinMembers <= 16:
+            video_cols = 4; video_rows = 4; break;
+          default:
+            video_cols = 5; video_rows = 4;
+          }
+          video_container_width = window.innerWidth - 20;
+        }
+        if( div_header.clientHeight == 0 ){
+          video_container_height = window.innerHeight - lbl_message.clientHeight - 20;
+        }else{
+          video_container_height = window.innerHeight - div_header.clientHeight - 20;
+        }
+        video_container.style.width = video_container_width + 'px';
+        video_container.style.height = video_container_height + 'px';
+        div_width = Math.floor((video_container_width - (2 * video_cols)) / video_cols);
+        div_height = Math.floor((video_container_height - (2 * video_rows)) / video_rows);
+        Array.from(video_container.children).forEach(targetDiv => {
+          Array.from(targetDiv.children).forEach(elm => {
+            if( elm.className == 'video' ){
+              for( let i=0; i<memberName.length ; i++ ){
+                if( memberName[i].peerId == targetDiv.id && memberName[i].video ){
+                  changeDivVideoSize(div_width, div_height, targetDiv.id);
+                  break;
+                }
+              }
+            }
+          });
+        });
+      }
+      //******************************************************************************************
+      // share_containerの設定
+      //******************************************************************************************
+      function share_container_setting( pCommonDisplay ){
+        if( pCommonDisplay ){
+          // 共有画面　表示時の処理
+          share_container_width = window.innerWidth - video_container_width -20;
+          if( div_header.clientHeight == 0 ){
+            share_container_height = window.innerHeight - lbl_message.clientHeight - 20;
+          }else{
+            share_container_height = window.innerHeight - div_header.clientHeight - 20;
+          }
+          share_container.style.width = share_container_width + 'px';
+          share_container.style.height = share_container_height + 'px';
+          const scr_height = Math.floor(share_container_width / shareAspectRate);
+          if( share_container_height > scr_height ){
+            disp_width = share_container_width-2;
+            disp_height = scr_height-2;
+            canvas_img.style.top = Math.floor((share_container_height - disp_height) / 2) + 'px';
+            canvas_img.style.left = '0px';
+          } else {
+            disp_width = Math.floor(share_container_height * shareAspectRate)-2;
+            disp_height = share_container_height-2;
+            canvas_img.style.top = '0px';
+            canvas_img.style.left = Math.floor((share_container_width - disp_width) / 2) + 'px';
+          }
+          canvas_img.width = disp_width;
+          canvas_img.height = disp_height;
+          pointer.width = canvas_img.width;
+          pointer.height = canvas_img.height;
+          pointer.style.top = canvas_img.style.top;
+          pointer.style.left = canvas_img.style.left;
+          share_container.style.border = '1px solid blue';
+        }else{
+          share_container_width = share_container_height = 0;
+          disp_width = disp_height = 0;
+          canvas_img.width = canvas_img.height = 0;
+          pointer.width = pointer.height = 0;
+          share_container.style.width = share_container.style.height = '0px';
+          share_container.style.border = 'none';
+        }
+      }
+      //******************************************************************************************
+      // CANVASの書込み設定
+      //******************************************************************************************
+       function canvas_write(event, pWidth, pHeight) {
+         const img = new Image();
+         img.onload = function() {
+           canvas_img.getContext('2d').drawImage(img, 1, 1, pWidth, pHeight);
+           const image = canvas_img.toDataURL();
+           roomMain.send(JSON.stringify({cmd:'DispImage', data:image}));
+         }
+         img.src = event.target.result;
+       }
+      //******************************************************************************************
+      // 画像コントローラーオン
+      //******************************************************************************************
+      function image_ctrl_on(){
+        lbl_share.hidden = button_screen_share.hidden = lbl_file_selector.hidden = true;
+        lbl_file_selector.className ='';
+        button_file_exit.hidden = false;
+        input_previous_page.hidden = false;
+        lbl_pages.hidden = false;
+        input_next_page.hidden = false;
+        files = event.target.files;
+        fileReader.onload = function(event) { canvas_write(event, canvas_img.width, canvas_img.height); }
+        lbl_pages.innerText = (target_page+1) + '/' + files.length;
+        target_page = 0;
+      }
+      //******************************************************************************************
+      // 画像コントローラーオフ
+      //******************************************************************************************
+      function image_ctrl_off(){
+        lbl_share.hidden = button_screen_share.hidden = lbl_file_selector.hidden = false;
+        lbl_file_selector.className ='button';
+        button_file_exit.hidden = true;
+        input_previous_page.hidden = true;
+        lbl_pages.hidden = true;
+        input_next_page.hidden = true;
+        input_file_selector.value = '';
+        lbl_pages.innerText = '';
+        target_page = null;
+      }
+      //******************************************************************************************
+      // ポインターコントローラーオン
+      //******************************************************************************************
+      function pointer_ctrl_on(){
+        lbl_pointer_setting.hidden = sel_color.hidden = sel_size.hidden = false;
+      }
+      //******************************************************************************************
+      // ポインターコントローラーオフ
+      //******************************************************************************************
+      function pointer_ctrl_off(){
+        lbl_pointer_setting.hidden = sel_color.hidden = sel_size.hidden = true;
+      }
+      //******************************************************************************************
+      // 送信元の画像情報を受信側の表示領域に修正して表示
+      //******************************************************************************************
+      function scaleToFit(pSender, pSelf, pCtx){
+        const scale = getScale(pSender, pSelf);
+        pCtx.drawImage(pSender, 1, 1, pSender.width * scale.x, pSender.height * scale.y);
+      }
+      //******************************************************************************************
+      // 送信元と受信側の幅と高さの率の小さい方を返却
+      //******************************************************************************************
+      function getScale(pSender, pSelf){
+          return {x:pSelf.width / pSender.width, y:pSelf.height / pSender.height};
+      }
+      //******************************************************************************************
+      // videoの新規作成
+      //******************************************************************************************
       function makeVideoContainer(pContainer, pDiv, pWidth, pHeight, pStream, pLocal) {
         // divの設定
         pDiv.className = 'video-div';
@@ -132,251 +388,265 @@
           pDiv.id = pStream.peerId;
         }
         pDiv.align = 'center';
-        pDiv.style.border ='1px solid gray';
+        pDiv.style.border = '1px solid black';
         pDiv.style.width = pWidth + 'px';
         pDiv.style.height = pHeight + 'px';
         pDiv.style.float = 'left';
-        pContainer.appendChild(pDiv);
+        let isDisplayMedia = false;
+        try{
+          isDisplayMedia = pStream.getAudioTracks().length==0?true:false;
+        }catch(e){
+          isDisplayMedia = false;
+        }
         // videoの作成
         const newVideo = document.createElement('video');
         newVideo.className = 'video';
-        SetChangeVideoSize(pWidth, pHeight, newVideo);
+        newVideo.style.border = '1px solid black';
+        SetChangeVideoSize(pWidth-2, pHeight-2, newVideo);
         if( pLocal ){
           newVideo.muted = true;
         }
         newVideo.srcObject = pStream;
         newVideo.playsInline = true;
         pDiv.appendChild(newVideo);
+        pContainer.appendChild(pDiv);
+        if( !isDisplayMedia ){
+          let not_exist = true;
+          // 参加者名情報の作成
+          Array.from(pDiv.children).forEach(elm => {
+            if( elm.className == 'fukidashi' ){ not_exist = false; }
+          });
+          if( not_exist ){
+            const newLabel = document.createElement('label');
+            newLabel.className = 'fukidashi';
+            for( let i=0; i<memberName.length; i++ ){
+              if( pStream == undefined ){
+                if( memberName[i].peerId == 'myself'){
+                  newLabel.innerText = memberName[i].name;
+                }
+              }else{
+                if( memberName[i].peerId == pStream.peerId || memberName[i].peerId == 'myself'){
+                  newLabel.innerText = memberName[i].name;
+                }
+              }
+            }
+            pDiv.appendChild(newLabel);
+          }
+        }
         return newVideo;
       }
+      //******************************************************************************************
       // videoサイズの設定＆変更
+      //******************************************************************************************
       function SetChangeVideoSize(pWidth, pHeight, pElement) {
-        const video_height = Math.floor(pWidth / 1.33333333);
+        const video_height = Math.floor(pWidth / videoAspectRate);
         if( pHeight > video_height ){
           pElement.width = pWidth;
           pElement.height = video_height;
           pElement.style.top = Math.floor((pHeight - video_height) / 2) + 'px';
         } else {
-          pElement.width = Math.floor(pHeight * 1.33333333);
+          pElement.width = Math.floor(pHeight * videoAspectRate);
           pElement.height = pHeight;
           pElement.style.top = '0px';
         }
       }
+      //******************************************************************************************
       // divサイズとvideoサイズの変更
+      //******************************************************************************************
       function changeDivVideoSize(pWidth, pHeight, pPeerId) {
         const div = document.getElementById(pPeerId);
         div.style.width = pWidth + 'px';
         div.style.height = pHeight + 'px';
         Array.from(div.children).forEach(elm => {
-          if( elm.className == 'video' ){
-            SetChangeVideoSize(pWidth, pHeight, elm);
-          }
+          if( elm.className == 'video' ){ SetChangeVideoSize(pWidth-2, pHeight-2, elm); }
         });
       }
-      // ビデオコンテナ再作成
+      //******************************************************************************************
+      // 共有画面とビデオコンテナ再作成
+      //******************************************************************************************
       function remakeContainer(joinMembers) {
-        const videos = [];
-        const ps = [];
-        const header_height = document.getElementById('header').clientHeight;
-        if( !haveDisplayMedia ){
-          // 共有画面なし時の処理
-          switch(true){
-          case joinMembers == 1:
-            div_cols = 1; div_rows = 1; break;
-          case joinMembers == 2:
-            div_cols = 2; div_rows = 1; break;
-          case joinMembers > 2 && joinMembers <= 4:
-            div_cols = 2; div_rows = 2; break;
-          case joinMembers > 4 && joinMembers <= 6:
-            div_cols = 3; div_rows = 2; break;
-          case joinMembers > 6 && joinMembers <= 9:
-            div_cols = 3; div_rows = 3; break;
-          case joinMembers > 9 && joinMembers <= 12:
-            div_cols = 4; div_rows = 3; break;
-          case joinMembers > 12 && joinMembers <= 16:
-            div_cols = 4; div_rows = 4; break;
-          default:
-            div_cols = 5; div_rows = 4;
-          }
-          common_width = 0;
-          common_height = window.innerHeight-header_height-20;
-          common.style.border = 'none';
-          common.style.width = common_width + 'px';
-          common.style.height = common_height + 'px';
-          container_width = window.innerWidth-20;
-          container_height = common_height;
-          container.style.width = container_width + 'px';
-          container.style.height = container_height + 'px';
-          div_width = Math.floor((container_width-(2*div_cols)) / div_cols);
-          div_height = Math.floor((container_height-(2*div_rows)) / div_rows);
-          Array.from(container.children).forEach(targetDiv => {
-            if( targetDiv.id != myPeerId ){
-              // コンテナから全てのdivを削除
-              Array.from(targetDiv.children).forEach(elm => {
-                if( elm.className == 'video' ){
-                  videos.push(elm);
-                } else {
-                  ps.push(elm);
-                }
-                elm.remove();
-              });
-              targetDiv.remove();
-            } else {
-              changeDivVideoSize(div_width, div_height, myPeerId);
-            }
-          });
-          // 退避したdivを再作成
-          for( let i=0; i<videos.length ; i++ ){
-              const newDiv = document.createElement("div");
-              newDiv.className = 'video-div';
-              newDiv.id = memberName[i+1].peerId;
-              newDiv.align = 'center';
-              newDiv.style.border ='1px solid gray';
-              newDiv.style.width = div_width + 'px';
-              newDiv.style.height = div_height + 'px';
-              newDiv.style.float = 'left';
-              SetChangeVideoSize(div_width, div_height, videos[i]);
-              newDiv.appendChild(videos[i]);
-              newDiv.appendChild(ps[i]);
-              container.appendChild(newDiv);
-          }
+        video_container_setting( haveImageMedia || haveDisplayMedia, joinMembers );
+        if( !haveImageMedia ){
+          //***** 共有画面なし時の処理 *****
+          share_container_setting( haveImageMedia || haveDisplayMedia );
         } else {
-          // 共有画面あり時の処理
-          switch(true){
-          case joinMembers <= 5:
-            div_cols = 1; div_rows = 5; break;
-          case joinMembers > 5 && joinMembers <= 10:
-            div_cols = 1; div_rows = 10; break;
-          default:
-            div_cols = 2; div_rows = 10;
+          //***** 共有画面あり時の処理 *****
+          if( haveImageMedia != saveImageMedia ){
+            share_container_setting( haveImageMedia || haveDisplayMedia );
+            if( target_page !== null ){ fileReader.readAsDataURL(files[target_page]); }
           }
-          common_width = Math.floor((window.innerWidth-20)*0.8);
-          common_height = window.innerHeight-header_height-20;
-          common.style.width = common_width + 'px';
-          common.style.height = common_height + 'px';
-          common.style.border = '1px solid blue';
-          container_width = window.innerWidth-common_width-20;
-          container_height = common_height;
-          container.style.width = container_width + 'px';
-          container.style.height = container_height + 'px';
-          div_width = Math.floor((container_width-(2*div_cols)) / div_cols);
-          div_height = Math.floor((container_height-(2*div_rows)) / div_rows);
-          Array.from(container.children).forEach(targetDiv => {
-            changeDivVideoSize(div_width, div_height, targetDiv.id);
-          });
         }
+        saveImageMedia = haveImageMedia;
       }
 
-      // メイン処理
-      (async function main() {
-        var roomMain, roomScreen;
-        const myName = document.getElementById('js-my-name');
-        const roomName = document.getElementById('js-room-name');
-        const EnterLeave = document.getElementById('js-enter-leave');
-        const ScreenShare = document.getElementById('js-screen-share');
-        const localStream = await navigator.mediaDevices.getUserMedia(
-            { audio: true,
-//              video: true,
-              video: {
-                 width : {ideal:640},
-                 height: {ideal:480},
-                 frameRate: { ideal: 10, max: 15 },
-              },
-            }
-        ).catch(console.error);
+      //******************************************************************************************
+      // msec用waitタイマー
+      //******************************************************************************************
+      const wait_msec = (msec) => {
+        return new Promise((resolve, reject) => { setTimeout(resolve, msec); });
+      };
 
-        // SkyWayに接続
-        const peerMain = (window.peer = new Peer({key: window.__SKYWAY_KEY__,debug: 3,}));
-        const peerScreen = (window.peer = new Peer({key: window.__SKYWAY_KEY__,debug: 3,}));
+      //******************************************************************************************
+      // 音声モニタ用タイマー
+      //******************************************************************************************
+      function get_audio(index){
+        return setInterval(function(){
+          const div = document.getElementById(memberName[index].peerId);
+          const data = new Float32Array(audioAnalyzer.frequencyBinCount / 4);
+          audioAnalyzer.getFloatFrequencyData(data);
+          let sum = 0;
+          for( let i=0; i<data.length; i++){sum+=data[i]*-1;}
+          const style = sum/data.length > 100 ? '1px solid black' : '1px solid darkorange';
+          Array.from(div.children).forEach(elm => {
+            if( elm.className == 'video' ){elm.style.border = style;}
+          });
+        }, 100);
+      };
+
+      //////////////////////////////////////////////////////////////////////////////////////////////////////
+      // メイン処理
+      //////////////////////////////////////////////////////////////////////////////////////////////////////
+      (async function main() {
+        let ev_cnt=0;
+
+        myPeerId = 'myself';
+        let localMadia = { audio: true,
+//          video: true,
+          video: {
+             width : {ideal:640},
+             height: {ideal:Math.floor(640 / videoAspectRate)},
+//             frameRate: { ideal: 10, max: 15 },
+             facingMode: 'user',
+          },
+        }
+        // カメラの接続
+        const localStream = await navigator.mediaDevices.getUserMedia( localMadia )
+          .catch(e => {alert('カメラとの接続でエラーが発生しました');});
         // ローカルストリーム用divの作成
         const newDiv = document.createElement("div");
-        newVideo = makeVideoContainer(container, newDiv, div_width, div_height, localStream, true);
-        const newP = document.createElement('p');
-        newP.className = 'fukidashi';
-        newP.innerText = 'ルームに未参加です';
-        newDiv.appendChild(newP);
-        memberName.push({peerId:'myself', name:''});
-        members ++;
-        myPeerId = 'myself';
-        await newVideo.play().catch(console.error);
+        memberName.push({peerId:myPeerId, name:'未参加', video:true, audioTimer:undefined});
+        myVideo = makeVideoContainer(video_container, newDiv, div_width, div_height, localStream, true);
+        members = 1;
+        if( myVideo != undefined ){
+          await myVideo.play().catch(console.error);
+        }
+        window.AudioContext = window.AudioContext || window.webkitAudioContext;
+        audioContext = new AudioContext();
 
-        // 入退室処理
-        EnterLeave.addEventListener('click', () => {
-          if (!peerMain.open) {
-            alert('SkyWayと接続できません。');
-            return;  // perrが未接続の時終了
+        //******************************************************************************************
+        // カメラ選択チェンジイベント
+        //******************************************************************************************
+        sel_camera.addEventListener('change', () => {
+          localMadia.video.facingMode = sel_camera.value=='front'?'user':{ exact: 'environment' };
+          if( myVideo !== undefined ){
+            myVideo.srcObject.getVideoTracks().forEach(camera => { camera.stop(); });
           }
-          if( document.getElementById('js-my-name').value == '' ){
+          navigator.mediaDevices.getUserMedia(localMadia).then(stream => {
+            myVideo.srcObject = stream;
+            myVideo.play();
+            if( myPeerId != 'myself' ){
+              roomMain.replaceStream(stream);
+            }
+          }).catch(e => {alert('カメラとの接続でエラーが発生しました');});
+        });
+        //******************************************************************************************
+        // 入室・退室ボタンクリックイベント
+        //******************************************************************************************
+        button_enter_leave.addEventListener('click', async () => {
+          if( input_my_name.value == '' ){
             alert('参加者名を入力してください。');
             return;
           }
-          myPeerId = peerMain.id;
-          if( EnterLeave.innerText == '入室' ){
+          if( button_enter_leave.innerText == '入室' ){
+            button_enter_leave.disabled = true;
+            // SkyWayに接続
+            lbl_message.innerText = 'SkyWay接続中．．．';
+            peerMain = new Peer({key: window.__SKYWAY_KEY__,debug: 3,});
+            // SkyWayとの接続完了待ち
+            while(!peerMain.open){ await wait_msec(100); }
+            myPeerId = peerMain.id;
             const myDiv = document.getElementById('myself');
             myDiv.id = myPeerId;
             Array.from(myDiv.children).forEach(elm => {
-               if( elm.className == 'fukidashi' ){
-                 elm.innerText = document.getElementById('js-my-name').value;
-               }
+              if( elm.className == 'fukidashi' ){
+                elm.innerText = input_my_name.value;
+              }
             });
             for( let i=0; i<members; i++ ){
               if( memberName[i].peerId == 'myself' ){
                 memberName[i].peerId = myPeerId;
-                memberName[i].name = myName.value;
+                memberName[i].name = input_my_name.value;
                 break;
               }
             }
             // ルームに参加
-            roomMain = peerMain.joinRoom(roomName.value, {
-              mode: 'sfu',
-              stream: localStream,
-            });
-            EnterLeave.innerText = '退室';
+            roomMain = peerMain.joinRoom(input_room_name.value,{ mode:'sfu', stream:myVideo.srcObject, });
+            button_enter_leave.innerText = '退室';
+            button_enter_leave.disabled = false;
+            lbl_name.hidden = input_my_name.hidden = lbl_room.hidden = input_room_name.hidden = true;
+            lbl_share.hidden = button_screen_share.hidden = lbl_file_selector.hidden = false;
+            lbl_file_selector.className ='button';
           }else{
-            EnterLeave.innerText = '入室';
+            button_enter_leave.disabled = true;
             roomMain.close(),{once:true};
+            button_enter_leave.innerText = '入室';
+            button_enter_leave.disabled = false;
+            lbl_name.hidden = input_my_name.hidden = lbl_room.hidden = input_room_name.hidden = false;
+            lbl_share.hidden = button_screen_share.hidden = lbl_file_selector.hidden = true;
+            lbl_file_selector.className ='';
           }
-          //***** roomオープン時の処理 *****//
+          //================================================================================
+          // SkyWay room参加完了イベント発生
+          //================================================================================
           roomMain.once('open', () => {
-            roomMain.send(JSON.stringify({myName:myName.value}));
-            ScreenShare.disabled = false;
+            roomMain.send(JSON.stringify({cmd:'MyName', data:input_my_name.value, agent:Agent}));
+            button_screen_share.disabled = false;
+            lbl_message.innerText = '[' + input_room_name.value + ']　';
           });
-          //***** ルームに参加した新しいpeerのためにリモートストリームを作成 *****//
+          //================================================================================
+          // SkyWay stream受信イベント発生
+          //================================================================================
           roomMain.on('stream', async stream => {
-            let newVideo;
+            let newDiv, newVideo;
             const isDisplayMedia = stream.getAudioTracks().length==0?true:false;
-            if( !haveDisplayMedia && isDisplayMedia ){
-              haveDisplayMedia = true;
-              if( ScreenShare.innerText == '画面共有開始' ){
-                ScreenShare.disabled = true;
-              }
-            }
-            remakeContainer(++members);
-            const newDiv = document.createElement("div");
             if( isDisplayMedia ){
-              // 共有画面
-              newVideo = makeVideoContainer(common, newDiv, common_width, common_height, stream, false);
+              // 共有画面のstream受信
+              haveDisplayMedia = true;
+              if( stream.peerId == myScreenPeerId ){
+                button_screen_share.innerText = '共有終了';
+              }else{
+                button_screen_share.hidden = true;
+              }
+              lbl_share.hidden = lbl_file_selector.hidden = true;
+              lbl_file_selector.className ='';
+              remakeContainer(members);
+              newDiv = document.createElement("div");
+              newVideo = makeVideoContainer(share_container, newDiv, disp_width, disp_height, stream, false);
             } else {
-              // ビデオ画面
-              newVideo = makeVideoContainer(container, newDiv, div_width, div_height, stream, false);
-              const newP = document.createElement('p');
-              newP.className = 'fukidashi';
-              newP.innerText = '未定';
-              for( let i=0; i<memberName.length; i++ ){
-                if( memberName[i].peerId == stream.peerId ){
-                  newP.innerText = memberName[i].name;
-                }
+              // ビデオ画面のstream受信
+              audioAnalyzer = audioContext.createAnalyser();
+              audioSource = audioContext.createMediaStreamSource(stream);
+              audioSource.connect(audioAnalyzer);
+              newDiv = document.createElement("div");
+              newVideo = makeVideoContainer(video_container, newDiv, div_width, div_height, stream, false);
+              const index = memberName.findIndex(obj => obj.peerId === stream.peerId);
+              if( index >= 0 ){
+                memberName[index].video = true;
+                memberName[index].audioTimer = get_audio(index);
+                remakeContainer(members);
+              }else{
+                memberName.push({peerId:stream.peerId, name:'未定', video:true, audioTimer:get_audio(memberName.length)});
+                remakeContainer(++members);
+                roomMain.send(JSON.stringify({cmd:'WhatYourName'}));
               }
-              if( newP.innerText == '未定' ){
-                roomMain.send(JSON.stringify({WhatYorName:''}));
-              }
-              newDiv.appendChild(newP);
             }
             await newVideo.play().catch(console.error);
           });
-          //***** 自分の退室処理 *****//
+          //================================================================================
+          // SkyWay 自分の退室完了イベント発生
+          //================================================================================
           roomMain.once('close', () => {
-            Array.from(container.children).forEach(targetDiv => {
+            Array.from(video_container.children).forEach(targetDiv => {
               if( targetDiv.id == myPeerId){
                 // 自分のコンテナを初期化
                 targetDiv.id = 'myself';
@@ -400,36 +670,54 @@
             });
             if( haveDisplayMedia ){
               // 共有画面使用時の処理
-              const targetDiv = document.getElementById('common');
-              Array.from(targetDiv.children).forEach(elm => {
-                if( elm.className == 'video' ){
-                  elm.srcObject.getTracks().forEach(track => track.stop());
-                  elm.srcObject = null;
-                }
-                elm.remove();
+              Array.from(share_container.children).forEach(targetDiv => {
+                Array.from(targetDiv.children).forEach(elm => {
+                  if( elm.className == 'video' ){
+                    elm.srcObject.getTracks().forEach(track => track.stop());
+                    elm.srcObject = null;
+                    elm.remove();
+                    targetDiv.remove();
+                  }
+                  if( myScreenPeerId != undefined ){
+                    roomScreen.close();
+                    button_screen_share.innerText = 'アプリケーション画面';
+                    peerScreen.destroy(); // SkyWayを切断
+                  }
+                });
               });
               haveDisplayMedia = false;
+            }
+            if( haveImageMedia ){
+              image_ctrl_off();
+              pointer_ctrl_off();
+              haveImageMedia = saveImageMedia = false;
+              canvas_img.name = '';
+            }
+            // 
+            for( let i=0; i<memberName.length; i++ ){
+              if( memberName[i].audioTimer != undefined ){
+                clearInterval(memberName[i].audioTimer);
+              }
             }
             // 自分のPeerId以外をすべて削除
             memberName.splice(1);
             memberName[0].peerId = 'myself';
             members = 1;
             remakeContainer(members);
-            ScreenShare.disabled = true;
+            lbl_share.hidden = button_screen_share.hidden = lbl_file_selector.hidden = true;
+            lbl_message.innerText = '';
+            peerMain.destroy(); // SkyWayを切断
           });
-          //***** 他メンバーの退室処理 *****//
+          //================================================================================
+          // SkyWay 他メンバーの退室イベント発生
+          //================================================================================
           roomMain.on('peerLeave', peerId => {
-            // 退室したメンバーのコンテナを削除
+            // 退室メンバーのコンテナ削除
+            let isDisplayMedia = false;
             const targetDiv = document.getElementById(peerId);
             Array.from(targetDiv.children).forEach(elm => {
               if( elm.className == 'video' ){
-                const isDisplayMedia = elm.srcObject.getAudioTracks().length==0?true:false;
-                if( haveDisplayMedia && isDisplayMedia ){
-                  haveDisplayMedia = false;
-                  if( ScreenShare.innerText == '画面共有開始' ){
-                    ScreenShare.disabled = false;
-                  }
-                }
+                isDisplayMedia = elm.srcObject.getAudioTracks().length==0?true:false;
                 elm.srcObject.getTracks().forEach(track => track.stop());
                 elm.srcObject = null;
               }
@@ -438,60 +726,271 @@
             targetDiv.remove();
             // 退室したPeerIdをmemberNameから削除
             for( let i=1; i<memberName.length ; i++ ){
-              if( memberName[i] == peerId ){
+              if( memberName[i].peerId == peerId ){
+                console.log('audioTimer['+(i)+']'+memberName[i].audioTimer);
+                clearInterval(memberName[i].audioTimer);
                 memberName.splice(i, 1);
               }
             }
-            remakeContainer(--members);
+            if( isDisplayMedia ){
+              // 共有アプリケーションの終了処理
+              haveDisplayMedia = false;
+              button_screen_share.innerText = 'アプリケーション画面';
+              lbl_share.hidden = button_screen_share.hidden = lbl_file_selector.hidden = false;
+              lbl_file_selector.className ='button';
+              if( peerId == myScreenPeerId ){
+                // 自身が共有アプリケーションの提供元・SkyWayを切断
+                myScreenPeerId = undefined;
+                peerScreen.destroy();
+              }
+            }else{
+              // 参加者の退室処理
+              --members;
+            }
+            // 退室メンバーがCanvas画面の発信元なら共有を解除
+            if( canvas_img.name === peerId ){
+              image_ctrl_off();
+              pointer_ctrl_off();
+              haveImageMedia = saveImageMedia = false;
+              canvas_img.name = '';
+            }
+            remakeContainer(members);
           });
-          //***** データの受信処理 *****//
+          //================================================================================
+          // SkyWay データ受信イベント
+          //================================================================================
           roomMain.on('data', ({ data, src }) => {
+            const context = pointer.getContext('2d');
             const peerId = `${src}`;
             const recdata = JSON.parse(`${data}`);
-            if( typeof recdata.myName != "undefined"){
-              memberName.push({peerId:peerId, name:recdata.myName});
-            }
-            if( typeof recdata.WhatYorName != "undefined"){
-              roomMain.send(JSON.stringify({AnswerMyName:document.getElementById('js-my-name').value}));
-            }
-            if( typeof recdata.AnswerMyName != "undefined"){
-              let not_exist = true;
-              for( let i=0; i<memberName.length; i++ ){
-                if( memberName[i].peerId == peerId ){
-                  not_exist = false;
-                  break;
+            let img;
+            switch(recdata.cmd){
+            case 'MyName':
+              // 参加者情報受信
+              memberName.push({peerId:peerId, name:recdata.data, video:false, audioTimer:undefined});
+              console.log('>>>Agent-MyName:'+recdata.agent);
+              members++;
+              break;
+            case 'WhatYourName':
+              // 参加者情報要求データ受信
+              roomMain.send(JSON.stringify({cmd:'AnswerMyName', data:input_my_name.value, agent:Agent}));
+              if( haveImageMedia ){
+                img = canvas_img.toDataURL();
+                roomMain.send(JSON.stringify({cmd:'DispImage', data:img}));
+              }
+              break;
+            case 'AnswerMyName':
+              // 参加者情報応答データ受信
+              const index = memberName.findIndex(obj => obj.peerId === peerId);
+              if( index >= 0 ){
+                memberName[index].name = recdata.AnswerMyName;
+              }else{
+                memberName.push({peerId:peerId, name:recdata.AnswerMyName, video:false, audioTimer:undefined});
+                members++;
+              }
+              const targetDiv = document.getElementById(peerId);
+              Array.from(targetDiv.children).forEach(elm => {
+                if( elm.className == 'fukidashi' ){
+                  elm.innerText = recdata.data;
+                }
+              });
+              console.log('>>>Agent-AnswerMyName:'+recdata.agent);
+              break;
+            case 'DispImage':
+              // 画像データ受信
+              if( recdata.data == null ){
+                  haveImageMedia = false;
+                  saveImageMedia = false;
+                  remakeContainer(members);
+                  lbl_share.hidden = button_screen_share.hidden = lbl_file_selector.hidden = false;
+                  lbl_file_selector.className ='button';
+                  pointer_ctrl_off();
+              }else{
+                if( canvas_img.width == 0 ){
+                  canvas_img.name = peerId;
+                  haveImageMedia = true;
+                  saveImageMedia = false;
+                  remakeContainer(members);
+                  lbl_share.hidden = button_screen_share.hidden = lbl_file_selector.hidden = true;
+                  lbl_file_selector.className ='';
+                  pointer_ctrl_on();
+                }
+                img = new Image();
+                img.src = recdata.data;
+                img.onload = function() {
+                  scaleToFit(this, canvas_img, canvas_img.getContext('2d'));
                 }
               }
-              if( not_exist ){
-                memberName.push({peerId:peerId, name:recdata.AnswerMyName});
-                const targetDiv = document.getElementById(peerId);
-                Array.from(targetDiv.children).forEach(elm => {
-                  if( elm.className == 'fukidashi' ){
-                    elm.innerText = recdata.AnswerMyName;
-                  }
-                });
+              break;
+            case 'RequestImage':
+              // 画像要求データ受信
+              if( haveImageMedia ){
+                img = canvas_img.toDataURL();
+                roomMain.send(JSON.stringify({cmd:'DispImage', data:img}));
+              }
+              break;
+            case 'Pointer':
+              // ポインターデータ受信
+              const scale = getScale(recdata.data.canvas, pointer);
+              context.clearRect(0, 0, share_container_width, share_container_height);
+              context.fillStyle = recdata.data.color;
+              context.beginPath();
+              context.arc( recdata.data.x*scale.x, recdata.data.y*scale.y, recdata.data.size*scale.x, 0, Math.PI*2);
+              context.fill();
+              break;
+            case 'PointerClear':
+              // ポインタークリアデータ受信
+              context.clearRect(0, 0, share_container_width, share_container_height);
+              break;
+            }
+          });
+          //================================================================================
+          // マウス関連イベント処理
+          //================================================================================
+          //---------------------------------------------------------------------------
+          // canvas上のマウスカーソル座標取得
+          //---------------------------------------------------------------------------
+          function getMousePosition(pointer, evt) {
+            const rect = pointer.getBoundingClientRect();
+            return {
+              x: evt.clientX - rect.left,
+              y: evt.clientY - rect.top
+            };
+          }
+          //---------------------------------------------------------------------------
+          // マウス左クリック押下時の処理
+          //---------------------------------------------------------------------------
+          pointer.addEventListener('mousedown', function(event){
+            const mousePos = getMousePosition(pointer, event);
+            const context = pointer.getContext('2d');
+            context.clearRect(0, 0, share_container_width, share_container_height);
+            context.fillStyle = sel_color.value;
+            context.beginPath();
+            context.arc( mousePos.x, mousePos.y, sel_size.value, 0, Math.PI*2);
+            context.fill();
+            const obj = {
+              x:mousePos.x,
+              y:mousePos.y,
+              color:sel_color.value,
+              size:sel_size.value,
+              canvas:{width:pointer.width, height:pointer.height}
+            }
+            roomMain.send(JSON.stringify({cmd:'Pointer', data:obj}));
+          });
+          //---------------------------------------------------------------------------
+          // マウス左クリックリリース時の処理
+          //---------------------------------------------------------------------------
+          pointer.addEventListener('mouseup', function(event){
+            const context = pointer.getContext('2d');
+            context.clearRect(0, 0, share_container_width, share_container_height);
+            clearInterval(pointerTimer);
+            pointerTimer = setInterval(function(){
+              roomMain.send(JSON.stringify({cmd:'PointerClear'}));
+              clearInterval(pointerTimer);
+              pointerTimer = null;
+            }, 120);
+          });
+          //---------------------------------------------------------------------------
+          // マウスカーソル移動時の処理
+          //---------------------------------------------------------------------------
+          pointer.addEventListener('mousemove', function(event){
+            if ( event.which == 1 ){
+              // 左ボタンクリック中
+              if( pointerTimer == null ){
+                // SkyWayのデータ送信は100msec毎に送信されるので、
+                // 遅延を避けるために120msec後に送信
+                const mousePos = getMousePosition(pointer, event);
+                const context = pointer.getContext('2d');
+                context.clearRect(0, 0, share_container_width, share_container_height);
+                context.fillStyle = sel_color.value;
+                context.beginPath();
+                context.arc( mousePos.x, mousePos.y, sel_size.value, 0, Math.PI*2);
+                context.fill();
+                const obj = {
+                  x:mousePos.x,
+                  y:mousePos.y,
+                  color:sel_color.value,
+                  size:sel_size.value,
+                  canvas:{width:pointer.width, height:pointer.height}
+                }
+                pointerTimer = setInterval(function(){
+                  roomMain.send(JSON.stringify({cmd:'Pointer', data:obj}));
+                  clearInterval(pointerTimer);
+                  pointerTimer = null;
+                }, 120);
               }
             }
           });
         });
-        //***** 画面共有処理 *****//
-        ScreenShare.addEventListener('click', async () => {
-          myScreenPeerId = peerScreen.id;
-          if( ScreenShare.innerText == '画面共有開始' ){
-            const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-            // ルームに参加
-            roomScreen = peerScreen.joinRoom(roomName.value, {
-              mode: 'sfu',
-              stream: screenStream,
-            });
-            ScreenShare.innerText = '画面共有終了';
+
+        //******************************************************************************************
+        // 画像データ共有処理
+        //******************************************************************************************
+        //================================================================================
+        // 画像データボタンクリックイベント
+        //================================================================================
+        input_file_selector.addEventListener("change", function(event){
+          image_ctrl_on();
+          pointer_ctrl_on();
+          canvas_img.name = myPeerId;
+          haveImageMedia = true;
+          saveImageMedia = false;
+          remakeContainer(members);
+        },false);
+        //================================================================================
+        // 画像終了ボタンクリックイベント
+        //================================================================================
+        button_file_exit.addEventListener("click", function(){
+          image_ctrl_off();
+          pointer_ctrl_off();
+          haveImageMedia = false;
+          saveImageMedia = false;
+          remakeContainer(members);
+          roomMain.send(JSON.stringify({cmd:'DispImage', data:null}));
+        },false);
+        //================================================================================
+        // ◀（前ページ）クリックイベント
+        //================================================================================
+        input_previous_page.addEventListener("click", function() {
+          if( files != null ){
+            if( target_page > 0 ){
+              fileReader.readAsDataURL(files[--target_page]);
+              lbl_pages.innerText = (target_page+1) + "/" + files.length ;
+            }
+          }
+        });
+        //================================================================================
+        // ▶（次ページ）クリックイベント
+        //================================================================================
+        input_next_page.addEventListener("click", function () {
+          if( files != null ){
+            if( target_page < files.length-1 ){
+              fileReader.readAsDataURL(files[++target_page]);
+              lbl_pages.innerText = (target_page+1) + "/" + files.length ;
+            }
+          }
+        });
+
+        //******************************************************************************************
+        // アプリケーション画面　共有開始・終了ボタンクリック時のイベント処理登録
+        //******************************************************************************************
+        button_screen_share.addEventListener('click', async () => {
+          if( button_screen_share.innerText == 'アプリケーション画面' ){
+            // 共有開始・SkyWayに接続
+            peerScreen = new Peer({key: window.__SKYWAY_KEY__,debug: 3,});
+            // SkyWayとの接続完了待ち
+            while(!peerScreen.open){ await wait_msec(100); }
+            myScreenPeerId = peerScreen.id;
+            // 共有アプリケーションと接続
+            const screenStream = await navigator.mediaDevices.getDisplayMedia({video:true});
+            // ルームに入室
+            roomScreen = peerScreen.joinRoom(input_room_name.value, { mode:'sfu', stream:screenStream, });
           } else {
-            roomScreen.close(),{once:true};
-            ScreenShare.innerText = '画面共有開始';
+            // 共有終了・ルームから退室
+            roomScreen.close();
           }
         });
       })();
     </script>
   </body>
 </html>
-

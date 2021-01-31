@@ -142,10 +142,9 @@
       let videoAspectRate = 1.33333333;
 //      let shareAspectRate = 1.77777777;
 //      let videoAspectRate = 1.77777777;
-      let audioAnalyzer = null;
-      let audioSource = null;
+
       let audioContext = null;
-      let audioRequest = null;
+      let audioAnalyzer = null;
       const Agent = navigator.userAgent;
 
       //////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -530,6 +529,7 @@
         }
         window.AudioContext = window.AudioContext || window.webkitAudioContext;
         audioContext = new AudioContext();
+        audioAnalyzer = audioContext.createAnalyser();
 
         //******************************************************************************************
         // カメラ選択チェンジイベント
@@ -541,10 +541,11 @@
           }
           navigator.mediaDevices.getUserMedia(localMadia).then(stream => {
             myVideo.srcObject = stream;
-            myVideo.play();
-            if( myPeerId != 'myself' ){
-              roomMain.replaceStream(stream);
-            }
+            myVideo.play().then( () => {
+              if( myPeerId != 'myself' ){
+                roomMain.replaceStream(stream);
+              }
+            });
           }).catch(e => {alert('カメラとの接続でエラーが発生しました');});
         });
         //******************************************************************************************
@@ -622,8 +623,7 @@
               newVideo = makeVideoContainer(share_container, newDiv, disp_width, disp_height, stream, false);
             } else {
               // ビデオ画面のstream受信
-              audioAnalyzer = audioContext.createAnalyser();
-              audioSource = audioContext.createMediaStreamSource(stream);
+              const audioSource = audioContext.createMediaStreamSource(stream);
               audioSource.connect(audioAnalyzer);
               newDiv = document.createElement("div");
               newVideo = makeVideoContainer(video_container, newDiv, div_width, div_height, stream, false);

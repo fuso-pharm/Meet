@@ -162,9 +162,9 @@
             navigator.mediaDevices.enumerateDevices()
             .then(function(devices) {
               devices.forEach(function(device) {
-                if( device.kind == 'videoinput' ){
+                if( device.kind == 'videoinput' || device.kind == 'audioinput' ){
                   video_cnt++;
-               }
+                }
                 if( video_cnt > 1 ){
                   lbl_camera.hidden = sel_camera.hidden = false;
                 }else{
@@ -173,11 +173,9 @@
                 console.log(device.kind + ": " + device.label + " id = " + device.deviceId);
               });
             }).catch(function(err) {
-              alert(err);
               console.log(err.name + ": " + err.message);
             });
           }catch (e){
-            alert(e);
             lbl_camera.hidden = sel_camera.hidden = true;
           }
           video_container_setting( false, 1 );
